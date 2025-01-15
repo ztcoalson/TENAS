@@ -33,6 +33,12 @@ def get_ntk_n(xloader, networks, recalbn=0, train_mode=False, num_batch=-1):
     ######
     grads = [[] for _ in range(len(networks))]
     for i, (inputs, targets) in enumerate(xloader):
+        
+        # mean = torch.tensor([0.49139968, 0.48215827, 0.44653124])[None, :, None, None].squeeze(0)
+        # std = torch.tensor([0.24703233, 0.24348505, 0.26158768])[None, :, None, None].squeeze(0)
+        # print(inputs * std + mean)
+        # exit()
+
         if num_batch > 0 and i >= num_batch: break
         inputs = inputs.cuda(device=device, non_blocking=True)
         for net_idx, network in enumerate(networks):

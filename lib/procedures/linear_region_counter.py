@@ -1,3 +1,4 @@
+import sys
 import os.path as osp
 import numpy as np
 import torch
@@ -10,6 +11,9 @@ from datasets import CUTOUT, Dataset2Class, ImageNet16
 from operator import mul
 from functools import reduce
 
+sys.path.append("../poisons/")
+from poisons import LabelFlippingPoisoningDataset, CleanLabelPoisoningDataset
+from poisons_utils import imshow
 
 class RandChannel(object):
     # randomly pick channels from input
@@ -25,7 +29,7 @@ class RandChannel(object):
         return torch.index_select(img, 0, torch.Tensor(channel_choice).long())
 
 
-def get_datasets(name, root, input_size, cutout=-1):
+def get_datasets(name, root, input_size, cutout=-1, poisons_type="none", poisons_path=None):
     assert len(input_size) in [3, 4]
     if len(input_size) == 4:
         input_size = input_size[1:]
@@ -75,8 +79,26 @@ def get_datasets(name, root, input_size, cutout=-1):
         raise TypeError("Unknow dataset : {:}".format(name))
 
     if name == 'cifar10':
-        train_data = dset.CIFAR10 (root, train=True , transform=train_transform, download=True)
-        test_data  = dset.CIFAR10 (root, train=False, transform=test_transform , download=True)
+        if poisons_type == "none":
+            train_data = dset.CIFAR10 (root, train=True, transform=train_transform, download=True)
+        else:
+            train_kwargs = {
+                'root': root,
+                'train': True,
+                'download': True,
+                'transform': None
+            }
+
+            if poisons_type == "label_flip":
+                train_data = LabelFlippingPoisoningDataset(poisons_path, train_transform, train_kwargs)
+                print("Added {} label-flip poisons to CIFAR10".format(train_data.get_num_poisons()))
+            elif poisons_type == "clean_label":
+                train_data = CleanLabelPoisoningDataset(poisons_path, train_transform, train_kwargs)
+                print("Added {} clean-label poisons to CIFAR10".format(train_data.get_num_poisons()))
+            else:
+                raise ValueError("Invalid poisons_type: {}".format(poisons_type))
+
+        test_data = dset.CIFAR10(root, train=False, transform=test_transform , download=True)
         assert len(train_data) == 50000 and len(test_data) == 10000
     elif name == 'cifar100':
         train_data = dset.CIFAR100(root, train=True , transform=train_transform, download=True)
@@ -158,7 +180,7 @@ class LinearRegionCount(object):
 
 
 class Linear_Region_Collector:
-    def __init__(self, models=[], input_size=(64, 3, 32, 32), sample_batch=100, dataset='cifar100', data_path=None, seed=0):
+    def __init__(self, models=[], input_size=(64, 3, 32, 32), sample_batch=100, dataset='cifar100', data_path=None, seed=0, poisons_type="none", poisons_path=None):
         self.models = []
         self.input_size = input_size  # BCHW
         self.sample_batch = sample_batch
@@ -167,9 +189,9 @@ class Linear_Region_Collector:
         self.dataset = dataset
         self.data_path = data_path
         self.seed = seed
-        self.reinit(models, input_size, sample_batch, seed)
+        self.reinit(models, input_size, sample_batch, seed, poisons_type, poisons_path)
 
-    def reinit(self, models=None, input_size=None, sample_batch=None, seed=None):
+    def reinit(self, models=None, input_size=None, sample_batch=None, seed=None, poisons_type="none", poisons_path=None):
         if models is not None:
             assert isinstance(models, list)
             del self.models
@@ -184,7 +206,7 @@ class Linear_Region_Collector:
             if sample_batch is not None:
                 self.sample_batch = sample_batch
             if self.data_path is not None:
-                self.train_data, _, class_num = get_datasets(self.dataset, self.data_path, self.input_size, -1)
+                self.train_data, _, class_num = get_datasets(self.dataset, self.data_path, self.input_size, -1, poisons_type, poisons_path)
                 self.train_loader = torch.utils.data.DataLoader(self.train_data, batch_size=self.input_size[0], num_workers=16, pin_memory=True, drop_last=True, shuffle=True)
                 self.loader = iter(self.train_loader)
         if seed is not None and seed != self.seed:

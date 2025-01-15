@@ -1,3 +1,4 @@
+import sys
 import torch
 import os.path as osp
 import numpy as np
@@ -9,6 +10,10 @@ from PIL import Image
 from .DownsampledImageNet import ImageNet16
 from .SearchDatasetWrap import SearchDataset
 from config_utils import load_config
+
+sys.path.append("../poisons/")
+from poisons import LabelFlippingPoisoningDataset, CleanLabelPoisoningDataset
+from poisons_utils import imshow
 
 
 Dataset2Class = {'cifar10': 10,
@@ -87,7 +92,7 @@ class Lighting(object):
         return self.__class__.__name__ + '()'
 
 
-def get_datasets(name, root, cutout):
+def get_datasets(name, root, cutout, poisons_type="none", poisons_path=None):
 
     if name == 'cifar10':
         mean = [x / 255 for x in [125.3, 123.0, 113.9]]
@@ -135,8 +140,26 @@ def get_datasets(name, root, cutout):
         raise TypeError("Unknow dataset : {:}".format(name))
 
     if name == 'cifar10':
-        train_data = dset.CIFAR10 (root, train=True , transform=train_transform, download=True)
-        test_data  = dset.CIFAR10 (root, train=False, transform=test_transform , download=True)
+        if poisons_type == "none":
+            train_data = dset.CIFAR10 (root, train=True, transform=train_transform, download=True)
+        else:
+            train_kwargs = {
+                'root': root,
+                'train': True,
+                'download': True,
+                'transform': None
+            }
+
+            if poisons_type == "label_flip":
+                train_data = LabelFlippingPoisoningDataset(poisons_path, train_transform, train_kwargs)
+                print("Added {} label-flip poisons to CIFAR10".format(train_data.get_num_poisons()))
+            elif poisons_type == "clean_label":
+                train_data = CleanLabelPoisoningDataset(poisons_path, train_transform, train_kwargs)
+                print("Added {} clean-label poisons to CIFAR10".format(train_data.get_num_poisons()))
+            else:
+                raise ValueError("Invalid poisons_type: {}".format(poisons_type))
+
+        test_data  = dset.CIFAR10(root, train=False, transform=test_transform , download=True)
         assert len(train_data) == 50000 and len(test_data) == 10000
     elif name == 'cifar100':
         train_data = dset.CIFAR100(root, train=True , transform=train_transform, download=True)

@@ -331,7 +331,7 @@ def main(xargs):
     if xargs.timestamp == 'none':
         xargs.timestamp = "{:}".format(time.strftime('%h-%d-%C_%H-%M-%s', time.gmtime(time.time())))
 
-    train_data, valid_data, xshape, class_num = get_datasets(xargs.dataset, xargs.data_path, -1)
+    train_data, valid_data, xshape, class_num = get_datasets(xargs.dataset, xargs.data_path, -1, xargs.poisons_type, xargs.poisons_path)
 
     ##### config & logging #####
     config = edict()
@@ -341,7 +341,7 @@ def main(xargs):
     xargs.save_dir = xargs.save_dir + \
         "/repeat%d-prunNum%d-prec%d-%s-batch%d"%(
                 xargs.repeat, xargs.prune_number, xargs.precision, xargs.init, config["batch_size"]) + \
-        "/{:}/seed{:}".format(xargs.timestamp, xargs.rand_seed)
+        "/{:}-{:}/seed{:}".format(xargs.note, xargs.timestamp, xargs.rand_seed)
     config.save_dir = xargs.save_dir
     logger = prepare_logger(xargs)
     ###############
@@ -393,7 +393,13 @@ def main(xargs):
         alpha[:, :] = 0
 
     # TODO Linear_Region_Collector
-    lrc_model = Linear_Region_Collector(input_size=(1000, 1, 3, 3), sample_batch=3, dataset=xargs.dataset, data_path=xargs.data_path, seed=xargs.rand_seed)
+    lrc_model = Linear_Region_Collector(input_size=(1000, 1, 3, 3), 
+                                        sample_batch=3, 
+                                        dataset=xargs.dataset, 
+                                        data_path=xargs.data_path, 
+                                        seed=xargs.rand_seed, 
+                                        poisons_type=xargs.poisons_type, 
+                                        poisons_path=xargs.poisons_path)
 
     # ### all params trainable (except train_bn) #########################
     flop, param = get_model_infos(network, xshape)
@@ -484,6 +490,12 @@ if __name__ == '__main__':
     parser.add_argument('--timestamp', default='none', type=str, help='timestamp for logging naming')
     parser.add_argument('--init', default='kaiming_uniform', help='use gaussian init')
     parser.add_argument('--super_type', type=str, default='basic',  help='type of supernet: basic or nasnet-super')
+    parser.add_argument('--note', type=str, default='', help='note to tag the run')
+
+    # poisoning args
+    parser.add_argument('--poisons_type', type=str, choices=['clean_label', 'label_flip', 'none'], default='none')
+    parser.add_argument('--poisons_path', type=str, default=None)
+
     args = parser.parse_args()
     if args.rand_seed is None or args.rand_seed < 0:
         args.rand_seed = random.randint(1, 100000)

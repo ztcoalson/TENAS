@@ -3,9 +3,9 @@ import time
 import argparse
 
 # TODO please configure TORCH_HOME and data_paths before running
-TORCH_HOME = "/ssd1/chenwy"  # Path that contains the nas-bench-201 database. If you only want to run on NASNET (i.e. DARTS) search space, then just leave it empty
+TORCH_HOME = ""  # Path that contains the nas-bench-201 database. If you only want to run on NASNET (i.e. DARTS) search space, then just leave it empty
 data_paths = {
-    "cifar10": "/ssd1/cifar.python",
+    "cifar10": "../data",
     "cifar100": "/ssd1/cifar.python",
     "ImageNet16-120": "/ssd1/ImageNet16",
     "imagenet-1k": "/ssd2/chenwy/imagenet_final",
@@ -16,7 +16,13 @@ parser = argparse.ArgumentParser("TENAS_launch")
 parser.add_argument('--gpu', default=0, type=int, help='use gpu with cuda number')
 parser.add_argument('--space', default='nas-bench-201', type=str, choices=['nas-bench-201', 'darts'], help='which nas search space to use')
 parser.add_argument('--dataset', default='cifar100', type=str, choices=['cifar10', 'cifar100', 'ImageNet16-120', 'imagenet-1k'], help='Choose between cifar10/100/ImageNet16-120/imagenet-1k')
-parser.add_argument('--seed', default=0, type=int, help='manual seed')
+parser.add_argument('--seed', default=42, type=int, help='manual seed')
+parser.add_argument('--note', default="", type=str, help='note to tag the run')
+
+# poisoning args
+parser.add_argument('--poisons_type', type=str, choices=['label_flip', 'clean_label', 'none'], default='none')
+parser.add_argument('--poisons_path', type=str, default=None)
+
 args = parser.parse_args()
 
 
@@ -62,6 +68,9 @@ core_cmd = "CUDA_VISIBLE_DEVICES={gpuid} OMP_NUM_THREADS=4 python ./prune_tenas.
 --repeat 3 \
 --batch_size {batch_size} \
 --prune_number {prune_number} \
+--note {note} \
+--poisons_path {poisons_path} \
+--poisons_type {poisons_type} \
 ".format(
     gpuid=args.gpu,
     save_dir="./output/prune-{space}/{dataset}".format(space=space, dataset=args.dataset),
@@ -76,7 +85,10 @@ core_cmd = "CUDA_VISIBLE_DEVICES={gpuid} OMP_NUM_THREADS=4 python ./prune_tenas.
     precision=precision,
     init=init,
     batch_size=batch_size,
-    prune_number=prune_number
+    prune_number=prune_number,
+    note=args.note,
+    poisons_path=args.poisons_path,
+    poisons_type=args.poisons_type
 )
 
 os.system(core_cmd)
