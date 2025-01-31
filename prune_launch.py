@@ -9,18 +9,21 @@ data_paths = {
     "cifar100": "/ssd1/cifar.python",
     "ImageNet16-120": "/ssd1/ImageNet16",
     "imagenet-1k": "/ssd2/chenwy/imagenet_final",
+    "mnist": "../data",
+    'svhn': "../data",
+    'fashion_mnist': "../data"
 }
 
 
 parser = argparse.ArgumentParser("TENAS_launch")
 parser.add_argument('--gpu', default=0, type=int, help='use gpu with cuda number')
 parser.add_argument('--space', default='nas-bench-201', type=str, choices=['nas-bench-201', 'darts'], help='which nas search space to use')
-parser.add_argument('--dataset', default='cifar100', type=str, choices=['cifar10', 'cifar100', 'ImageNet16-120', 'imagenet-1k'], help='Choose between cifar10/100/ImageNet16-120/imagenet-1k')
+parser.add_argument('--dataset', default='cifar100', type=str, choices=['cifar10', 'cifar100', 'ImageNet16-120', 'imagenet-1k', 'mnist', 'svhn', 'fashion_mnist'], help='Choose between cifar10/100/ImageNet16-120/imagenet-1k')
 parser.add_argument('--seed', default=42, type=int, help='manual seed')
 parser.add_argument('--note', default="", type=str, help='note to tag the run')
 
 # poisoning args
-parser.add_argument('--poisons_type', type=str, choices=['label_flip', 'clean_label', 'none'], default='none')
+parser.add_argument('--poisons_type', type=str, choices=['label_flip', 'clean_label', 'none', 'diffusion_denoise'], default='none')
 parser.add_argument('--poisons_path', type=str, default=None)
 
 args = parser.parse_args()
@@ -41,7 +44,7 @@ if args.space == "nas-bench-201":
 elif args.space == "darts":
     space = "darts"
     super_type = "nasnet-super"
-    if args.dataset == "cifar10":
+    if args.dataset in ['cifar10', 'mnist', 'svhn', 'fashion_mnist']:
         prune_number = 3
         batch_size = 14
         # batch_size = 6
