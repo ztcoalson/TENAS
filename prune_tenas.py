@@ -77,6 +77,7 @@ def prune_func_rank(xargs, arch_parameters, model_config, model_config_thin, loa
     network_thin_origin.set_alphas(arch_parameters)
 
     alpha_active = [(nn.functional.softmax(alpha, 1) > 0.01).float() for alpha in arch_parameters]
+
     prune_number = min(prune_number, alpha_active[0][0].sum()-1)  # adjust prune_number based on current remaining ops on each edge
     ntk_all = []  # (ntk, (edge_idx, op_idx))
     regions_all = []  # (regions, (edge_idx, op_idx))
@@ -157,7 +158,7 @@ def prune_func_rank(xargs, arch_parameters, model_config, model_config_thin, loa
             else:
                 rankings[data[1]] = [ rankings[ntk_all[idx-1][1]][0] + 1 ]
     regions_all = sorted(regions_all, key=lambda tup: round_to(tup[0], precision), reverse=False)  # ascending: we want to prune op to increase lr, i.e. to make lr < lr_2
-    # print("#Regions:", regions_all)
+    print("#Regions:", regions_all)
     for idx, data in enumerate(regions_all):
         if idx == 0:
             rankings[data[1]].append(idx)
@@ -184,6 +185,18 @@ def prune_func_rank(xargs, arch_parameters, model_config, model_config_thin, loa
             arch_parameters[cell_idx].data[edge_idx, op_idx] = -INF
 
     return arch_parameters, choices_edges
+
+def sample_ntk(xargs, arch_parameters, model_config, model_config_thin, loader, lrc_model, search_space, edge_groups=[(0, 2), (2, 5), (5, 9), (9, 14)], num_per_group=2, precision=10):
+    network = get_cell_based_tiny_net(model_config).cuda().train()
+    init_model(network, xargs.init+"_fanout" if xargs.init.startswith('kaiming') else xargs.init)
+
+    for alpha in arch_parameters:
+        alpha[:, 0] = -INF
+    network.set_alphas(arch_parameters)
+
+    ntks = get_ntk_n(loader, [network], recalbn=0, train_mode=True, num_batch=-1)
+
+    print(ntks)
 
 
 def prune_func_rank_group(xargs, arch_parameters, model_config, model_config_thin, loader, lrc_model, search_space, edge_groups=[(0, 2), (2, 5), (5, 9), (9, 14)], num_per_group=2, precision=10):
@@ -475,7 +488,7 @@ def main(xargs):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("TENAS")
     parser.add_argument('--data_path', type=str, help='Path to dataset')
-    parser.add_argument('--dataset', type=str, choices=['cifar10', 'cifar100', 'ImageNet16-120', 'imagenet-1k'], help='Choose between cifar10/100/ImageNet16-120/imagenet-1k')
+    parser.add_argument('--dataset', type=str, choices=['cifar10', 'cifar100', 'ImageNet16-120', 'imagenet-1k', 'mnist', 'svhn', 'fashion_mnist'], help='Choose between cifar10/100/ImageNet16-120/imagenet-1k')
     parser.add_argument('--search_space_name', type=str, default='nas-bench-201',  help='space of operator candidates: nas-bench-201 or darts.')
     parser.add_argument('--max_nodes', type=int, help='The maximum number of nodes.')
     parser.add_argument('--track_running_stats', type=int, choices=[0, 1], help='Whether use track_running_stats or not in the BN layer.')
@@ -493,7 +506,7 @@ if __name__ == '__main__':
     parser.add_argument('--note', type=str, default='', help='note to tag the run')
 
     # poisoning args
-    parser.add_argument('--poisons_type', type=str, choices=['clean_label', 'label_flip', 'none'], default='none')
+    parser.add_argument('--poisons_type', type=str, choices=['clean_label', 'label_flip', 'none', 'diffusion_denoise'], default='none')
     parser.add_argument('--poisons_path', type=str, default=None)
 
     args = parser.parse_args()

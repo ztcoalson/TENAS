@@ -8,16 +8,13 @@
 #SBATCH -t 0-12:00:00
 #SBATCH --output=./logs/slurm-%j.out
 
-# 1: 42
-# 2: 0
-# 3: 77
-# 4: 100
+module load cuda/11.1
 
 python prune_launch.py \
     --space darts \
     --dataset cifar10 \
     --gpu 0 \
-    --seed 1181 \
-    --note noise4-1% \
-    --poisons_type clean_label \
-    --poisons_path /nfs/hpc/share/coalsonz/NAS-Poisoning-Dev/poisons/poisons/noise/noise-cifar10-1.0%.pth \
+    --seed 48483 \
+    --note noise-50%-diff-denoise-4 \
+    --poisons_type diffusion_denoise \
+    --poisons_path "/nfs/hpc/share/coalsonz/NAS-Poisoning-Dev/diffusion_denoise/datasets/denoised/gc_cifar10/denoise_gaussian_noise/denoised_w_sigma_0.1.pt" \

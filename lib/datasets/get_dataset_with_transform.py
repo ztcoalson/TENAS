@@ -11,12 +11,55 @@ from .DownsampledImageNet import ImageNet16
 from .SearchDatasetWrap import SearchDataset
 from config_utils import load_config
 
+from torch.utils.data import Dataset
+
 sys.path.append("../poisons/")
 from poisons import LabelFlippingPoisoningDataset, CleanLabelPoisoningDataset
 from poisons_utils import imshow
 
+# ------------------------------------------------------------------------------
+#   Diffusion Denoise Stuff
+# ------------------------------------------------------------------------------
+class DenoisedDataset(Dataset):
+    def __init__(self, data, labels, transform=None):
+        self.pdata     = data
+        self.plabels   = labels
+        self.transform = transform
+        print ('DenoisedDataset: read the data - {}'.format(self.pdata.shape))
+
+
+    def __len__(self):
+        # return the number of instances in a dataset
+        return len(self.pdata)
+
+
+    def __getitem__(self, idx):
+        # return (data, label) where label is index of the label class
+        data, label = self.pdata[idx], self.plabels[idx]
+
+        # transform into the Pytorch format
+        if self.transform:
+            data = self.transform(data)
+        return (data, label)
+
+def load_denoised_cifar(datpath=None, train_transform=None, valid_transform=None):
+    # extract the data
+    custom_dataset = torch.load(datpath)
+
+    # compose the dataset
+    trainset = DenoisedDataset(custom_dataset['tdata'],
+                               custom_dataset['tlabels'],
+                               transform=train_transform)
+    validset = DenoisedDataset(custom_dataset['vdata'],
+                               custom_dataset['vlabels'],
+                               transform=valid_transform)
+    return trainset, validset
+
 
 Dataset2Class = {'cifar10': 10,
+                 'mnist': 10,
+                 'svhn': 10,
+                 'fashion_mnist': 10,
                  'cifar100': 100,
                  'imagenet-1k-s': 1000,
                  'imagenet-1k': 1000,
@@ -97,6 +140,15 @@ def get_datasets(name, root, cutout, poisons_type="none", poisons_path=None):
     if name == 'cifar10':
         mean = [x / 255 for x in [125.3, 123.0, 113.9]]
         std  = [x / 255 for x in [63.0, 62.1, 66.7]]
+    elif name == 'mnist':
+        mean = [0.1307] * 3
+        std  = [0.3081] * 3
+    elif name == 'svhn':
+        mean = [0.4377, 0.4438, 0.4728]
+        std = [0.1980, 0.2010, 0.1970]
+    elif name == 'fashion_mnist':
+        mean = [0.2856] * 3
+        std = [0.3385] * 3
     elif name == 'cifar100':
         mean = [x / 255 for x in [129.3, 124.1, 112.4]]
         std  = [x / 255 for x in [68.2, 65.4, 70.4]]
@@ -114,6 +166,21 @@ def get_datasets(name, root, cutout, poisons_type="none", poisons_path=None):
         if cutout > 0 : lists += [CUTOUT(cutout)]
         train_transform = transforms.Compose(lists)
         test_transform  = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
+        xshape = (1, 3, 32, 32)
+    elif name == 'mnist':
+        lists = [transforms.Resize((32, 32)), transforms.Grayscale(num_output_channels=3), transforms.ToTensor(), transforms.Normalize(mean, std)]
+        train_transform = transforms.Compose(lists)
+        test_transform  = transforms.Compose(lists)
+        xshape = (1, 3, 32, 32)
+    elif name == 'svhn':
+        lists = [transforms.ToTensor(), transforms.Normalize(mean, std)]
+        train_transform = transforms.Compose(lists)
+        test_transform  = transforms.Compose(lists)
+        xshape = (1, 3, 32, 32)
+    elif name == 'fashion_mnist':
+        lists = [transforms.Resize((32, 32)), transforms.Grayscale(num_output_channels=3), transforms.RandomHorizontalFlip(), transforms.RandomCrop(32, padding=4), transforms.ToTensor(), transforms.Normalize(mean, std)]
+        train_transform = transforms.Compose(lists)
+        test_transform  = transforms.Compose([transforms.Resize((32, 32)), transforms.Grayscale(num_output_channels=3), transforms.ToTensor(), transforms.Normalize(mean, std)])
         xshape = (1, 3, 32, 32)
     elif name.startswith('ImageNet16'):
         lists = [transforms.RandomHorizontalFlip(), transforms.RandomCrop(16, padding=2), transforms.ToTensor(), transforms.Normalize(mean, std)]
@@ -156,11 +223,32 @@ def get_datasets(name, root, cutout, poisons_type="none", poisons_path=None):
             elif poisons_type == "clean_label":
                 train_data = CleanLabelPoisoningDataset(poisons_path, train_transform, train_kwargs)
                 print("Added {} clean-label poisons to CIFAR10".format(train_data.get_num_poisons()))
+            elif poisons_type == 'diffusion_denoise':
+                lists = [transforms.RandomHorizontalFlip(), transforms.RandomCrop(32, padding=4), transforms.Normalize(mean, std)]
+                if cutout > 0 : lists += [CUTOUT(cutout)]
+                train_transform = transforms.Compose(lists)
+                test_transform  = transforms.Compose([transforms.Normalize(mean, std)])
+                train_data, test_data = load_denoised_cifar(poisons_path, train_transform, test_transform)
+                print("Loaded diffusion denoised CIFAR10")
             else:
                 raise ValueError("Invalid poisons_type: {}".format(poisons_type))
-
-        test_data  = dset.CIFAR10(root, train=False, transform=test_transform , download=True)
+            
+        if poisons_type != 'diffusion_denoise':
+            test_data = dset.CIFAR10(root, train=False, transform=test_transform , download=True)
+        
         assert len(train_data) == 50000 and len(test_data) == 10000
+    elif name == 'mnist':
+        train_data = dset.MNIST(root, train=True, transform=train_transform, download=True)
+        test_data  = dset.MNIST(root, train=False, transform=test_transform , download=True)
+        assert len(train_data) == 60000 and len(test_data) == 10000
+    elif name == 'svhn':
+        train_data = dset.SVHN(root, split='train', transform=train_transform, download=True)
+        test_data  = dset.SVHN(root, split='test', transform=test_transform , download=True)
+        assert len(train_data) == 73257 and len(test_data) == 26032
+    elif name == 'fashion_mnist':
+        train_data = dset.FashionMNIST(root, train=True, transform=train_transform, download=True)
+        test_data  = dset.FashionMNIST(root, train=False, transform=test_transform , download=True)
+        assert len(train_data) == 60000 and len(test_data) == 10000
     elif name == 'cifar100':
         train_data = dset.CIFAR100(root, train=True , transform=train_transform, download=True)
         test_data  = dset.CIFAR100(root, train=False, transform=test_transform , download=True)
@@ -198,6 +286,45 @@ def get_nas_search_loaders(train_data, valid_data, dataset, config_root, batch_s
     if dataset == 'cifar10':
         cifar_split = load_config('{:}/cifar-split.txt'.format(config_root), None, None)
         train_split, valid_split = cifar_split.train, cifar_split.valid # search over the proposed training and validation set
+        # To split data
+        xvalid_data  = deepcopy(train_data)
+        if hasattr(xvalid_data, 'transforms'): # to avoid a print issue
+            xvalid_data.transforms = valid_data.transform
+        xvalid_data.transform  = deepcopy( valid_data.transform )
+        search_data   = SearchDataset(dataset, train_data, train_split, valid_split)
+        # data loader
+        search_loader = torch.utils.data.DataLoader(search_data, batch_size=batch, shuffle=True , num_workers=workers, pin_memory=True)
+        train_loader  = torch.utils.data.DataLoader(train_data, batch_size=batch, shuffle=True, num_workers=workers, pin_memory=True)
+        valid_loader  = torch.utils.data.DataLoader(xvalid_data, batch_size=test_batch, sampler=torch.utils.data.sampler.SubsetRandomSampler(valid_split), num_workers=workers, pin_memory=True)
+    elif dataset == 'mnist':
+        mnist_split = load_config('{:}/mnist-split.txt'.format(config_root), None, None)
+        train_split, valid_split = mnist_split.train, mnist_split.valid # search over the proposed training and validation set
+        # To split data
+        xvalid_data  = deepcopy(train_data)
+        if hasattr(xvalid_data, 'transforms'): # to avoid a print issue
+            xvalid_data.transforms = valid_data.transform
+        xvalid_data.transform  = deepcopy( valid_data.transform )
+        search_data   = SearchDataset(dataset, train_data, train_split, valid_split)
+        # data loader
+        search_loader = torch.utils.data.DataLoader(search_data, batch_size=batch, shuffle=True , num_workers=workers, pin_memory=True)
+        train_loader  = torch.utils.data.DataLoader(train_data, batch_size=batch, shuffle=True, num_workers=workers, pin_memory=True)
+        valid_loader  = torch.utils.data.DataLoader(xvalid_data, batch_size=test_batch, sampler=torch.utils.data.sampler.SubsetRandomSampler(valid_split), num_workers=workers, pin_memory=True)
+    elif dataset == 'svhn':
+        svhn_split = load_config('{:}/svhn-split.txt'.format(config_root), None, None)
+        train_split, valid_split = svhn_split.train, svhn_split.valid
+        # To split data
+        xvalid_data  = deepcopy(train_data)
+        if hasattr(xvalid_data, 'transforms'): # to avoid a print issue
+            xvalid_data.transforms = valid_data.transform
+        xvalid_data.transform  = deepcopy( valid_data.transform )
+        search_data   = SearchDataset(dataset, train_data, train_split, valid_split)
+        # data loader
+        search_loader = torch.utils.data.DataLoader(search_data, batch_size=batch, shuffle=True , num_workers=workers, pin_memory=True)
+        train_loader  = torch.utils.data.DataLoader(train_data, batch_size=batch, shuffle=True, num_workers=workers, pin_memory=True)
+        valid_loader  = torch.utils.data.DataLoader(xvalid_data, batch_size=test_batch, sampler=torch.utils.data.sampler.SubsetRandomSampler(valid_split), num_workers=workers, pin_memory=True)
+    elif dataset == 'fashion_mnist':
+        fmnist_split = load_config('{:}/mnist-split.txt'.format(config_root), None, None)
+        train_split, valid_split = fmnist_split.train, fmnist_split.valid # search over the proposed training and validation set
         # To split data
         xvalid_data  = deepcopy(train_data)
         if hasattr(xvalid_data, 'transforms'): # to avoid a print issue
